@@ -1,0 +1,22 @@
+{
+  "name": "beget-cli",
+  "version": "0.1.0",
+  "description": "Practical MVP CLI for Beget API",
+  "type": "module",
+  "bin": {
+    "beget": "./bin/beget.js"
+  },
+  "scripts": {
+    "self-check": "node ./scripts/self-check.mjs",
+    "start": "node ./bin/beget.js"
+  },
+  "keywords": [
+    "beget",
+    "cli",
+    "api"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.1.0"
+  }
+}
