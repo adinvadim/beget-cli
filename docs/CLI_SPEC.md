@@ -1,97 +1,140 @@
-# Beget CLI MVP Spec (create-cli based)
+# CLI_SPEC (create-cli aligned)
 
-## 1) Name
+## Name
 `beget`
 
-## 2) One-liner
-Practical command-line client for Beget API with local profile management.
+## Scope
+Полный CLI для методов Beget API из KB:
+- account (`user/*`)
+- domains (`domain/*`)
+- dns (`dns/*`)
+- ftp (`ftp/*`)
+- mail (`mail/*`)
+- mysql (`mysql/*`)
+- backup (`backup/*`)
+- cron (`cron/*`)
+- sites (`site/*`)
 
-## 3) Usage
-- `beget [global flags] <group> <command> [args]`
-- `beget auth add <name> [--login <login>] [--dry-run] [--no-input]`
-- `beget auth list`
-- `beget auth use <name> [--dry-run]`
-- `beget auth remove <name> [--dry-run]`
-- `beget account info`
-- `beget domains list [--all] [--expiring-days <days>]`
-- `beget domains expiring [--days <days>] [--all]`
-- `beget dns list <domain>`
-- `beget dns ns-get <domain>`
-- `beget dns ns-set <domain> <ns1> <ns2> [--ip1 <ip> --ip2 <ip>]`
+## UX contract
+- Команда: `beget [global flags] <namespace> <command> [options]`
+- Общие флаги:
+  - `--config <path>`
+  - `--profile <name>`
+  - `--login <login>`
+  - `--base-url <url>`
+  - `--timeout <ms>`
+  - `--json`
+  - `--yes` (global confirmation for risky actions)
+- `--help` и примеры по каждой группе/команде через Commander help.
 
-## 4) Global flags
-- `-h, --help` Show help.
-- `--version` Print CLI version.
-- `--config <path>` Custom config file path.
-- `--profile <name>` Profile to use for this run.
-- `--login <login>` Override login for this run.
-- `--base-url <url>` Override Beget API base URL (default: `https://api.beget.com/api`).
-- `--timeout <ms>` Request timeout in ms (default: `20000`).
-- `--json` JSON output for machine use.
+## stdout/stderr
+- Успешные данные → stdout
+- Ошибки/диагностика → stderr
+- `--json` делает вывод и ошибки machine-friendly JSON
 
-## 5) Output contract
-- **stdout**: successful result, human text by default or JSON with `--json`.
-- **stderr**: all errors and diagnostics.
-- Human output is concise and workflow-friendly.
+## Secrets policy
+- Секреты не передаются positional args.
+- Источники секретов:
+  - env (`BEGET_API_PASSWORD`, `BEGET_API_KEY`, `BEGET_FTP_PASSWORD`, `BEGET_MAILBOX_PASSWORD`, `BEGET_MYSQL_PASSWORD`)
+  - masked prompt (TTY)
+- В `--no-input` режиме без env-секретов команда завершается с code `2`.
 
-## 6) Subcommand behavior
-- `auth add <name>`: prompts for login + API password (masked), stores profile securely. Supports `--dry-run`.
-- `auth list`: shows saved profiles and active marker.
-- `auth use <name>`: marks profile active. Supports `--dry-run`.
-- `auth remove <name>`: deletes profile and reassigns active profile if needed. Supports `--dry-run`.
-- `account info`: calls `user/getAccountInfo`.
-- `domains list`: calls `domain/getList`; by default returns only active/managed domains (`is_under_control=1`), use `--all` to include everything. Adds `days_to_expire` and `expires_soon` fields (`--expiring-days`, default 30).
-- `domains expiring`: same source, but returns only `expires_soon=true` rows (`--days`, default 30), sorted by nearest expiration.
-- `dns list <domain>`: calls `dns/getData` with JSON input.
+## Precedence (flags/env/config)
+1. flags
+2. env
+3. config (active profile)
 
-## 7) Env/config precedence
-For credentials/runtime settings:
-1. **Flags** (`--profile`, `--login`, `--base-url`, `--config`, `--timeout`)
-2. **Environment** (`BEGET_PROFILE`, `BEGET_LOGIN`, `BEGET_API_PASSWORD` or `BEGET_API_KEY`, `BEGET_API_BASE_URL`, `BEGET_CONFIG`)
-3. **User config** active profile at XDG path.
+## Mutations, dry-run, confirmations
+- Любая mutate-команда поддерживает `--dry-run`.
+- Risky mutate-команды (delete/drop/restore и т.п.):
+  - interactive: подтверждение `y/N` если нет `--yes`
+  - non-interactive: без `--yes` блокируются
 
-Notes:
-- API password is intentionally not accepted as CLI flag (to avoid shell history leaks).
-- `auth add` reads API password from interactive prompt or `BEGET_API_PASSWORD` (fallback: `BEGET_API_KEY`) in `--no-input` mode.
+## Exit codes
+- `0` OK
+- `1` generic
+- `2` usage/validation
+- `3` auth
+- `4` API-level
+- `5` config
+- `6` network/timeout/http
 
-## 8) Config storage
-- Default path:
-  - `$XDG_CONFIG_HOME/beget-cli/config.json` if `XDG_CONFIG_HOME` exists;
-  - else `~/.config/beget-cli/config.json`.
-- JSON format:
-```json
-{
-  "version": 1,
-  "activeProfile": "main",
-  "profiles": {
-    "main": { "login": "user123", "apiKey": "***" }
-  }
-}
-```
-- Permissions enforced:
-  - directory: `0700`
-  - config file: `0600`
+## API coverage matrix
 
-## 9) Exit codes
-- `0` success
-- `1` generic/unexpected error
-- `2` usage/validation error
-- `3` auth error (missing/invalid credentials)
-- `4` Beget API method/protocol error
-- `5` config read/write/profile error
-- `6` network/timeout/HTTP error
+### account
+- `user/getAccountInfo` → `account info`
+- `user/toggleSsh` → `account toggle-ssh`
 
-## 10) Safety rules
-- `--dry-run` for all state-changing auth commands.
-- No destructive server actions in MVP.
-- No secrets in command args.
+### domains
+- `domain/getList` → `domains list`
+- `domain/getZoneList` → `domains zone-list`
+- `domain/addVirtual` → `domains add-virtual`
+- `domain/delete` → `domains delete`
+- `domain/getSubdomainList` → `domains subdomain-list`
+- `domain/addSubdomainVirtual` → `domains add-subdomain-virtual`
+- `domain/deleteSubdomain` → `domains delete-subdomain`
+- `domain/checkDomainToRegister` → `domains check-to-register`
+- `domain/getPhpVersion` → `domains php-version-get`
+- `domain/changePhpVersion` → `domains php-version-change`
+- `domain/getDirectives` → `domains directives-get`
+- `domain/addDirectives` → `domains directives-add`
+- `domain/removeDirectives` → `domains directives-remove`
 
-## 11) Examples
-- `beget auth add personal`
-- `beget auth add personal --dry-run --login mylogin`
-- `BEGET_API_PASSWORD=... beget auth add personal --login mylogin --no-input`
-- `beget auth list`
-- `beget auth use personal`
-- `beget account info --json`
-- `beget domains list --json`
-- `beget dns list example.com --json`
+### dns
+- `dns/getData` → `dns list`, `dns ns-get`
+- `dns/changeRecords` → `dns change-records`, `dns ns-set`
+
+### ftp
+- `ftp/getList` → `ftp list`
+- `ftp/add` → `ftp add`
+- `ftp/changePassword` → `ftp change-password`
+- `ftp/delete` → `ftp delete`
+
+### mail
+- `mail/getMailboxList` → `mail mailbox-list`
+- `mail/changeMailboxPassword` → `mail mailbox-password-change`
+- `mail/createMailbox` → `mail mailbox-create`
+- `mail/dropMailbox` → `mail mailbox-drop`
+- `mail/changeMailboxSettings` → `mail mailbox-settings-change`
+- `mail/forwardListAddMailbox` → `mail forward-add`
+- `mail/forwardListDeleteMailbox` → `mail forward-delete`
+- `mail/forwardListShow` → `mail forward-show`
+- `mail/setDomainMail` → `mail domain-mail-set`
+- `mail/clearDomainMail` → `mail domain-mail-clear`
+
+### mysql
+- `mysql/getList` → `mysql list`
+- `mysql/addDb` → `mysql db-add`
+- `mysql/addAccess` → `mysql access-add`
+- `mysql/dropDb` → `mysql db-drop`
+- `mysql/dropAccess` → `mysql access-drop`
+- `mysql/changeAccessPassword` → `mysql access-password-change`
+
+### backup
+- `backup/getFileBackupList` → `backup file-backup-list`
+- `backup/getMysqlBackupList` → `backup mysql-backup-list`
+- `backup/getFileList` → `backup file-list`
+- `backup/getMysqlList` → `backup mysql-list`
+- `backup/restoreFile` → `backup restore-file`
+- `backup/restoreMysql` → `backup restore-mysql`
+- `backup/downloadFile` → `backup download-file`
+- `backup/downloadMysql` → `backup download-mysql`
+- `backup/getLog` → `backup log`
+
+### cron
+- `cron/getList` → `cron list`
+- `cron/add` → `cron add`
+- `cron/delete` → `cron delete`
+- `cron/changeHiddenState` → `cron change-hidden-state`
+- `cron/getEmail` → `cron email-get`
+- `cron/setEmail` → `cron email-set`
+
+### sites
+- `site/getList` → `sites list`
+- `site/add` → `sites add`
+- `site/delete` → `sites delete`
+- `site/linkDomain` → `sites link-domain`
+- `site/unlinkDomain` → `sites unlink-domain`
+- `site/freeze` → `sites freeze`
+- `site/unfreeze` → `sites unfreeze`
+- `site/isSiteFrozen` → `sites is-frozen`
