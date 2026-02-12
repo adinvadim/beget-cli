@@ -1,8 +1,8 @@
 # beget-cli
 
-CLI для Beget API с единым UX по clig.dev/create-cli.
+CLI для Beget API (hosting) с полным покрытием методов из KB (RU+EN).
 
-Покрытие: `account`, `domains`, `dns`, `ftp`, `mail`, `mysql`, `backup`, `cron`, `sites`.
+Покрытие namespace: `account`, `domains`, `dns`, `ftp`, `mail`, `mysql`, `backup`, `cron`, `sites`, `stats`.
 
 ## Установка
 
@@ -15,140 +15,110 @@ beget --help
 
 ## Авторизация
 
-Интерактивно:
-
 ```bash
 beget auth add main
 beget auth use main
 beget account info --json
 ```
 
-Неинтерактивно:
+Non-interactive:
 
 ```bash
 BEGET_API_PASSWORD='***' beget auth add main --login mylogin --no-input
 ```
 
-## Быстрые примеры
-
-```bash
-# аккаунт
-beget account info --json
-
-# домены (по умолчанию: только active/managed)
-beget domains list --json
-
-# только истекающие домены
-beget domains expiring --days 45 --json
-
-# DNS/NS
-beget dns list adinvadim.ru --json
-beget dns ns-get adinvadim.ru --json
-beget dns ns-set adinvadim.ru ns1.example.net ns2.example.net --dry-run --json
-```
-
 ## Безопасность
 
-- Секреты не передавай через аргументы CLI.
-- Используй env-переменные или masked prompt.
+- Секреты не передавать через positional args.
 - Для mutate-команд есть `--dry-run`.
-- Для рискованных операций в non-interactive режиме обязателен `--yes`.
+- Для рискованных операций (delete/drop/restore) в non-interactive обязателен `--yes`.
 
-## Конфиг и precedence
+## Полный method -> command map
 
-Config path:
-- `--config`
-- `BEGET_CONFIG`
-- `$XDG_CONFIG_HOME/beget-cli/config.json`
-- `~/.config/beget-cli/config.json`
+### user
+- `user/getAccountInfo` → `beget account info`
+- `user/toggleSsh` → `beget account toggle-ssh`
 
-Precedence:
-1. flags
-2. env
-3. active profile в config
-
-## Namespace map
-
-### account
-- `info`
-- `toggle-ssh`
-
-### domains
-- `list`
-- `expiring`
-- `zone-list`
-- `add-virtual`
-- `delete`
-- `subdomain-list`
-- `add-subdomain-virtual`
-- `delete-subdomain`
-- `check-to-register`
-- `php-version-get`
-- `php-version-change`
-- `directives-get`
-- `directives-add`
-- `directives-remove`
+### domain
+- `domain/getList` → `beget domains list`
+- `domain/getZoneList` → `beget domains zone-list`
+- `domain/addVirtual` → `beget domains add-virtual`
+- `domain/delete` → `beget domains delete`
+- `domain/getSubdomainList` → `beget domains subdomain-list`
+- `domain/addSubdomainVirtual` → `beget domains add-subdomain-virtual`
+- `domain/deleteSubdomain` → `beget domains delete-subdomain`
+- `domain/checkDomainToRegister` → `beget domains check-to-register`
+- `domain/getPhpVersion` → `beget domains php-version-get`
+- `domain/changePhpVersion` → `beget domains php-version-change`
+- `domain/getDirectives` → `beget domains directives-get`
+- `domain/addDirectives` → `beget domains directives-add`
+- `domain/removeDirectives` → `beget domains directives-remove`
 
 ### dns
-- `list`
-- `ns-get`
-- `ns-set`
-- `change-records`
+- `dns/getData` → `beget dns list` (и shortcut `beget dns ns-get`)
+- `dns/changeRecords` → `beget dns change-records` (и shortcut `beget dns ns-set`)
 
 ### ftp
-- `list`
-- `add`
-- `change-password`
-- `delete`
+- `ftp/getList` → `beget ftp list`
+- `ftp/add` → `beget ftp add`
+- `ftp/changePassword` → `beget ftp change-password`
+- `ftp/delete` → `beget ftp delete`
 
 ### mail
-- `mailbox-list`
-- `mailbox-password-change`
-- `mailbox-create`
-- `mailbox-drop`
-- `mailbox-settings-change`
-- `forward-add`
-- `forward-delete`
-- `forward-show`
-- `domain-mail-set`
-- `domain-mail-clear`
+- `mail/getMailboxList` → `beget mail mailbox-list`
+- `mail/changeMailboxPassword` → `beget mail mailbox-password-change`
+- `mail/createMailbox` → `beget mail mailbox-create`
+- `mail/dropMailbox` → `beget mail mailbox-drop`
+- `mail/changeMailboxSettings` → `beget mail mailbox-settings-change`
+- `mail/forwardListAddMailbox` → `beget mail forward-add`
+- `mail/forwardListDeleteMailbox` → `beget mail forward-delete`
+- `mail/forwardListShow` → `beget mail forward-show`
+- `mail/setDomainMail` → `beget mail domain-mail-set`
+- `mail/clearDomainMail` → `beget mail domain-mail-clear`
 
 ### mysql
-- `list`
-- `db-add`
-- `access-add`
-- `db-drop`
-- `access-drop`
-- `access-password-change`
+- `mysql/getList` → `beget mysql list`
+- `mysql/addDb` → `beget mysql db-add`
+- `mysql/addAccess` → `beget mysql access-add`
+- `mysql/dropDb` → `beget mysql db-drop`
+- `mysql/dropAccess` → `beget mysql access-drop`
+- `mysql/changeAccessPassword` → `beget mysql access-password-change`
 
 ### backup
-- `file-backup-list`
-- `mysql-backup-list`
-- `file-list`
-- `mysql-list`
-- `restore-file`
-- `restore-mysql`
-- `download-file`
-- `download-mysql`
-- `log`
+- `backup/getFileBackupList` → `beget backup file-backup-list`
+- `backup/getMysqlBackupList` → `beget backup mysql-backup-list`
+- `backup/getFileList` → `beget backup file-list`
+- `backup/getMysqlList` → `beget backup mysql-list`
+- `backup/restoreFile` → `beget backup restore-file`
+- `backup/restoreMysql` → `beget backup restore-mysql`
+- `backup/downloadFile` → `beget backup download-file`
+- `backup/downloadMysql` → `beget backup download-mysql`
+- `backup/getLog` → `beget backup log`
 
 ### cron
-- `list`
-- `add`
-- `delete`
-- `change-hidden-state`
-- `email-get`
-- `email-set`
+- `cron/getList` → `beget cron list`
+- `cron/add` → `beget cron add`
+- `cron/edit` → `beget cron edit`
+- `cron/delete` → `beget cron delete`
+- `cron/changeHiddenState` → `beget cron change-hidden-state`
+- `cron/getEmail` → `beget cron email-get`
+- `cron/setEmail` → `beget cron email-set`
 
-### sites
-- `list`
-- `add`
-- `delete`
-- `link-domain`
-- `unlink-domain`
-- `freeze`
-- `unfreeze`
-- `is-frozen`
+### site
+- `site/getList` → `beget sites list`
+- `site/add` → `beget sites add`
+- `site/delete` → `beget sites delete`
+- `site/linkDomain` → `beget sites link-domain`
+- `site/unlinkDomain` → `beget sites unlink-domain`
+- `site/freeze` → `beget sites freeze`
+- `site/unfreeze` → `beget sites unfreeze`
+- `site/isSiteFrozen` → `beget sites is-frozen`
+
+### stat
+- `stat/getSitesListLoad` → `beget stats sites-list-load`
+- `stat/getSiteLoad` → `beget stats site-load`
+- `stat/getDbListLoad` → `beget stats db-list-load`
+- `stat/getDbLoad` → `beget stats db-load`
 
 ## Выходные коды
 

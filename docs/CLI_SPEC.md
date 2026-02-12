@@ -1,71 +1,47 @@
-# CLI_SPEC (create-cli aligned)
+# CLI_SPEC
 
 ## Name
 `beget`
 
 ## Scope
-Полный CLI для методов Beget API из KB:
-- account (`user/*`)
-- domains (`domain/*`)
-- dns (`dns/*`)
-- ftp (`ftp/*`)
-- mail (`mail/*`)
-- mysql (`mysql/*`)
-- backup (`backup/*`)
-- cron (`cron/*`)
-- sites (`site/*`)
+Полное покрытие методов Beget API (hosting KB, RU+EN):
+`user`, `domain`, `dns`, `ftp`, `mail`, `mysql`, `backup`, `cron`, `site`, `stat`.
 
-## UX contract
-- Команда: `beget [global flags] <namespace> <command> [options]`
-- Общие флаги:
-  - `--config <path>`
-  - `--profile <name>`
-  - `--login <login>`
-  - `--base-url <url>`
-  - `--timeout <ms>`
-  - `--json`
-  - `--yes` (global confirmation for risky actions)
-- `--help` и примеры по каждой группе/команде через Commander help.
+Источники каталога методов:
+- `https://beget.com/ru/kb/api/funkczii-upravleniya-akkauntom`
+- `https://beget.com/ru/kb/api/funkczii-upravleniya-bekapami`
+- `https://beget.com/ru/kb/api/funkczii-upravleniya-cron`
+- `https://beget.com/ru/kb/api/funkczii-upravleniya-dns`
+- `https://beget.com/ru/kb/api/funkczii-upravleniya-ftp`
+- `https://beget.com/ru/kb/api/funkczii-upravleniya-mysql`
+- `https://beget.com/ru/kb/api/funkczii-upravleniya-sajtami`
+- `https://beget.com/ru/kb/api/funkczii-dlya-raboty-s-domenami`
+- `https://beget.com/ru/kb/api/funkczii-dlya-raboty-s-pochtoj`
+- `https://beget.com/ru/kb/api/funkczii-dlya-sbora-statistiki`
+(EN mirror pages содержат тот же набор методов.)
 
-## stdout/stderr
-- Успешные данные → stdout
-- Ошибки/диагностика → stderr
-- `--json` делает вывод и ошибки machine-friendly JSON
+## Global flags
+- `--config <path>`
+- `--profile <name>`
+- `--login <login>`
+- `--base-url <url>`
+- `--timeout <ms>`
+- `--json`
+- `--yes`
 
-## Secrets policy
-- Секреты не передаются positional args.
-- Источники секретов:
-  - env (`BEGET_API_PASSWORD`, `BEGET_API_KEY`, `BEGET_FTP_PASSWORD`, `BEGET_MAILBOX_PASSWORD`, `BEGET_MYSQL_PASSWORD`)
-  - masked prompt (TTY)
-- В `--no-input` режиме без env-секретов команда завершается с code `2`.
+## Safety contract
+- Все mutate-команды поддерживают `--dry-run`.
+- Risky mutate (delete/drop/restore) требуют подтверждение:
+  - interactive: prompt `y/N`
+  - non-interactive: обязателен `--yes`
 
-## Precedence (flags/env/config)
-1. flags
-2. env
-3. config (active profile)
+## Full method → command map
 
-## Mutations, dry-run, confirmations
-- Любая mutate-команда поддерживает `--dry-run`.
-- Risky mutate-команды (delete/drop/restore и т.п.):
-  - interactive: подтверждение `y/N` если нет `--yes`
-  - non-interactive: без `--yes` блокируются
-
-## Exit codes
-- `0` OK
-- `1` generic
-- `2` usage/validation
-- `3` auth
-- `4` API-level
-- `5` config
-- `6` network/timeout/http
-
-## API coverage matrix
-
-### account
+### user
 - `user/getAccountInfo` → `account info`
 - `user/toggleSsh` → `account toggle-ssh`
 
-### domains
+### domain
 - `domain/getList` → `domains list`
 - `domain/getZoneList` → `domains zone-list`
 - `domain/addVirtual` → `domains add-virtual`
@@ -81,8 +57,8 @@
 - `domain/removeDirectives` → `domains directives-remove`
 
 ### dns
-- `dns/getData` → `dns list`, `dns ns-get`
-- `dns/changeRecords` → `dns change-records`, `dns ns-set`
+- `dns/getData` → `dns list` (+ shortcut `dns ns-get`)
+- `dns/changeRecords` → `dns change-records` (+ shortcut `dns ns-set`)
 
 ### ftp
 - `ftp/getList` → `ftp list`
@@ -124,12 +100,13 @@
 ### cron
 - `cron/getList` → `cron list`
 - `cron/add` → `cron add`
+- `cron/edit` → `cron edit`
 - `cron/delete` → `cron delete`
 - `cron/changeHiddenState` → `cron change-hidden-state`
 - `cron/getEmail` → `cron email-get`
 - `cron/setEmail` → `cron email-set`
 
-### sites
+### site
 - `site/getList` → `sites list`
 - `site/add` → `sites add`
 - `site/delete` → `sites delete`
@@ -138,3 +115,18 @@
 - `site/freeze` → `sites freeze`
 - `site/unfreeze` → `sites unfreeze`
 - `site/isSiteFrozen` → `sites is-frozen`
+
+### stat
+- `stat/getSitesListLoad` → `stats sites-list-load`
+- `stat/getSiteLoad` → `stats site-load`
+- `stat/getDbListLoad` → `stats db-list-load`
+- `stat/getDbLoad` → `stats db-load`
+
+## Exit codes
+- `0` OK
+- `1` generic
+- `2` usage/validation
+- `3` auth
+- `4` API-level
+- `5` config
+- `6` network/timeout/http

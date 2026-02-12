@@ -42,6 +42,7 @@ try {
     ['mysql', 'db-add', '--suffix', 'db1', '--no-input', '--dry-run', '--json'],
     ['backup', 'restore-file', '--backup-id', '1', '--paths', '/a,/b', '--dry-run', '--json'],
     ['cron', 'add', '--minutes', '*', '--hours', '*', '--days', '*', '--months', '*', '--weekdays', '*', '--command', 'echo 1', '--dry-run', '--json'],
+    ['cron', 'edit', '--row-number', '1', '--minutes', '*', '--hours', '*', '--days', '*', '--months', '*', '--weekdays', '*', '--command', 'echo 2', '--dry-run', '--json'],
     ['sites', 'add', '--name', 'mysite', '--dry-run', '--json'],
   ];
 
@@ -54,6 +55,9 @@ try {
     r = run(args, env);
     assert(r.status === 0, `dry-run should succeed: ${args.join(' ')}`);
   }
+
+  r = run(['stats', '--help']);
+  assert(r.status === 0, 'stats help should succeed');
 
   r = run(['account', 'info']);
   assert(r.status !== 0, 'account info without valid creds/network should fail in smoke');
