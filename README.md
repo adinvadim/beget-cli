@@ -1,17 +1,21 @@
 # beget-cli
 
-Полный CLI для Beget API (account/domains/dns/ftp/mail/mysql/backup/cron/sites) с единым UX, `--json`, кодами выхода, безопасной работой с секретами, `--dry-run` и подтверждениями рискованных операций.
+CLI для Beget API с единым UX по clig.dev/create-cli.
+
+Покрытие: `account`, `domains`, `dns`, `ftp`, `mail`, `mysql`, `backup`, `cron`, `sites`.
 
 ## Установка
 
 ```bash
 cd /Users/mini/.openclaw/workspace/projects/beget-cli
 npm install
-npm link   # опционально
+npm link   # опционально, чтобы вызывать как `beget`
 beget --help
 ```
 
-## Быстрый старт (auth)
+## Авторизация
+
+Интерактивно:
 
 ```bash
 beget auth add main
@@ -25,114 +29,134 @@ beget account info --json
 BEGET_API_PASSWORD='***' beget auth add main --login mylogin --no-input
 ```
 
-## Принципы CLI (create-cli)
+## Быстрые примеры
 
-- Единый формат: `beget <namespace> <command> [options]`
-- Машинный вывод: `--json`
-- Ошибки в `stderr`, данные в `stdout`
-- Коды выхода (см. ниже)
-- Без секретов в аргументах: пароли читаются из env / prompt
-- Для mutate-команд: `--dry-run`
-- Для рискованных mutate-команд: подтверждение (`--yes` в non-interactive)
-- Приоритет: flags > env > config
+```bash
+# аккаунт
+beget account info --json
 
-## Конфиг / приоритет
+# домены (по умолчанию: только active/managed)
+beget domains list --json
 
-- Config path: `--config` > `BEGET_CONFIG` > `$XDG_CONFIG_HOME/beget-cli/config.json` > `~/.config/beget-cli/config.json`
-- Credentials/runtime precedence:
-  1. flags (`--profile`, `--login`, `--base-url`, `--timeout`, `--config`)
-  2. env (`BEGET_PROFILE`, `BEGET_LOGIN`, `BEGET_API_PASSWORD`/`BEGET_API_KEY`, `BEGET_API_BASE_URL`, `BEGET_CONFIG`)
-  3. active profile из config
+# только истекающие домены
+beget domains expiring --days 45 --json
 
-## Namespace / команды
+# DNS/NS
+beget dns list adinvadim.ru --json
+beget dns ns-get adinvadim.ru --json
+beget dns ns-set adinvadim.ru ns1.example.net ns2.example.net --dry-run --json
+```
+
+## Безопасность
+
+- Секреты не передавай через аргументы CLI.
+- Используй env-переменные или masked prompt.
+- Для mutate-команд есть `--dry-run`.
+- Для рискованных операций в non-interactive режиме обязателен `--yes`.
+
+## Конфиг и precedence
+
+Config path:
+- `--config`
+- `BEGET_CONFIG`
+- `$XDG_CONFIG_HOME/beget-cli/config.json`
+- `~/.config/beget-cli/config.json`
+
+Precedence:
+1. flags
+2. env
+3. active profile в config
+
+## Namespace map
 
 ### account
-- `account info`
-- `account toggle-ssh --status <0|1> [--ftplogin ...] [--dry-run]`
+- `info`
+- `toggle-ssh`
 
 ### domains
-- `domains list`
-- `domains zone-list`
-- `domains add-virtual --hostname ... --zone-id ... [--dry-run]`
-- `domains delete --id ... [--dry-run] [--yes]`
-- `domains subdomain-list`
-- `domains add-subdomain-virtual --subdomain ... --domain-id ... [--dry-run]`
-- `domains delete-subdomain --id ... [--dry-run] [--yes]`
-- `domains check-to-register --hostname ... --zone-id ... --period ...`
-- `domains php-version-get --full-fqdn ...`
-- `domains php-version-change --full-fqdn ... --php-version ... [--is-cgi true|false] [--dry-run]`
-- `domains directives-get --full-fqdn ...`
-- `domains directives-add --full-fqdn ... --directives-json '[...]' [--dry-run]`
-- `domains directives-remove --full-fqdn ... --directives-json '[...]' [--dry-run]`
+- `list`
+- `expiring`
+- `zone-list`
+- `add-virtual`
+- `delete`
+- `subdomain-list`
+- `add-subdomain-virtual`
+- `delete-subdomain`
+- `check-to-register`
+- `php-version-get`
+- `php-version-change`
+- `directives-get`
+- `directives-add`
+- `directives-remove`
 
 ### dns
-- `dns list <domain>`
-- `dns ns-get <domain>`
-- `dns ns-set <domain> <ns1> <ns2> [--ip1 ... --ip2 ...] [--dry-run]`
-- `dns change-records --fqdn ... --records-json '{...}' [--dry-run]`
+- `list`
+- `ns-get`
+- `ns-set`
+- `change-records`
 
 ### ftp
-- `ftp list`
-- `ftp add --suffix ... --homedir ... [--dry-run] [--no-input]` (`BEGET_FTP_PASSWORD`)
-- `ftp change-password --suffix ... [--dry-run] [--no-input]` (`BEGET_FTP_PASSWORD`)
-- `ftp delete --suffix ... [--dry-run] [--yes]`
+- `list`
+- `add`
+- `change-password`
+- `delete`
 
 ### mail
-- `mail mailbox-list --domain ...`
-- `mail mailbox-password-change --domain ... --mailbox ... [--dry-run] [--no-input]` (`BEGET_MAILBOX_PASSWORD`)
-- `mail mailbox-create --domain ... --mailbox ... [--dry-run] [--no-input]` (`BEGET_MAILBOX_PASSWORD`)
-- `mail mailbox-drop --domain ... --mailbox ... [--dry-run] [--yes]`
-- `mail mailbox-settings-change --domain ... --mailbox ... --spam-filter-status ... --spam-filter ... --forward-mail-status ... [--dry-run]`
-- `mail forward-add --domain ... --mailbox ... --forward-mailbox ... [--dry-run]`
-- `mail forward-delete --domain ... --mailbox ... --forward-mailbox ... [--dry-run]`
-- `mail forward-show --domain ... --mailbox ...`
-- `mail domain-mail-set --domain ... --domain-mailbox ... [--dry-run]`
-- `mail domain-mail-clear --domain ... [--dry-run]`
+- `mailbox-list`
+- `mailbox-password-change`
+- `mailbox-create`
+- `mailbox-drop`
+- `mailbox-settings-change`
+- `forward-add`
+- `forward-delete`
+- `forward-show`
+- `domain-mail-set`
+- `domain-mail-clear`
 
 ### mysql
-- `mysql list`
-- `mysql db-add --suffix ... [--dry-run] [--no-input]` (`BEGET_MYSQL_PASSWORD`)
-- `mysql access-add --suffix ... --access ... [--dry-run] [--no-input]` (`BEGET_MYSQL_PASSWORD`)
-- `mysql db-drop --suffix ... [--dry-run] [--yes]`
-- `mysql access-drop --suffix ... --access ... [--dry-run] [--yes]`
-- `mysql access-password-change --suffix ... --access ... [--dry-run] [--no-input]` (`BEGET_MYSQL_PASSWORD`)
+- `list`
+- `db-add`
+- `access-add`
+- `db-drop`
+- `access-drop`
+- `access-password-change`
 
 ### backup
-- `backup file-backup-list`
-- `backup mysql-backup-list`
-- `backup file-list [--backup-id ...] [--path ...]`
-- `backup mysql-list [--backup-id ...]`
-- `backup restore-file --backup-id ... --paths a,b [--dry-run] [--yes]`
-- `backup restore-mysql --backup-id ... --bases a,b [--dry-run] [--yes]`
-- `backup download-file --paths a,b [--backup-id ...] [--dry-run]`
-- `backup download-mysql --bases a,b [--backup-id ...] [--dry-run]`
-- `backup log`
+- `file-backup-list`
+- `mysql-backup-list`
+- `file-list`
+- `mysql-list`
+- `restore-file`
+- `restore-mysql`
+- `download-file`
+- `download-mysql`
+- `log`
 
 ### cron
-- `cron list`
-- `cron add --minutes ... --hours ... --days ... --months ... --weekdays ... --command ... [--dry-run]`
-- `cron delete --row-number ... [--dry-run] [--yes]`
-- `cron change-hidden-state --row-number ... --is-hidden 0|1 [--dry-run]`
-- `cron email-get`
-- `cron email-set --email ... [--dry-run]`
+- `list`
+- `add`
+- `delete`
+- `change-hidden-state`
+- `email-get`
+- `email-set`
 
 ### sites
-- `sites list`
-- `sites add --name ... [--dry-run]`
-- `sites delete --id ... [--dry-run] [--yes]`
-- `sites link-domain --domain-id ... --site-id ... [--dry-run]`
-- `sites unlink-domain --domain-id ... [--dry-run]`
-- `sites freeze --id ... [--excluded-paths p1,p2] [--dry-run]`
-- `sites unfreeze --id ... [--dry-run]`
-- `sites is-frozen --site-id ...`
+- `list`
+- `add`
+- `delete`
+- `link-domain`
+- `unlink-domain`
+- `freeze`
+- `unfreeze`
+- `is-frozen`
 
-## Коды выхода
+## Выходные коды
 
 - `0` успех
 - `1` непредвиденная ошибка
 - `2` usage/validation
 - `3` auth/credentials
-- `4` Beget API error
+- `4` API error
 - `5` config error
 - `6` network/timeout/http
 
