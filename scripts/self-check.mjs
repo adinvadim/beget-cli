@@ -25,7 +25,7 @@ try {
   r = run(['--help']);
   assert(r.status === 0, 'help should exit 0');
 
-  r = run(['auth', 'add', 'main', '--login', 'demo', '--no-input'], { BEGET_API_KEY: 'secret' });
+  r = run(['auth', 'add', 'main', '--login', 'demo', '--no-input', '--no-verify'], { BEGET_API_KEY: 'secret' });
   assert(r.status === 0, 'auth add should succeed');
   assert(existsSync(cfg), 'config file should exist');
 

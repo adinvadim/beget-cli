@@ -181,7 +181,11 @@ async function callBeget({ baseUrl, login, apiKey, section, method, inputData, q
   }
 
   if (payload.status !== 'success') {
-    throw new CliError(`Beget API error: ${payload.error_text ?? 'unknown error'}`, payload.error_code === 'AUTH_ERROR' ? EXIT.AUTH_ERROR : EXIT.API_ERROR, payload.error_code);
+    const isAuthError = payload.error_code === 'AUTH_ERROR';
+    const authHint = isAuthError
+      ? ' Check the account login and Beget API password; API access must be enabled in the Beget control panel.'
+      : '';
+    throw new CliError(`Beget API error: ${payload.error_text ?? 'unknown error'}.${authHint}`, isAuthError ? EXIT.AUTH_ERROR : EXIT.API_ERROR, payload.error_code);
   }
 
   const answer = payload.answer;
@@ -218,7 +222,7 @@ program
   .option('--yes', 'auto-confirm risky actions');
 
 const auth = program.command('auth').description('Manage local Beget credentials');
-auth.command('add <name>').description('Add/update profile').option('--dry-run').option('--no-input').option('--login <login>').action(async (name, cmdOpts, cmd) => {
+auth.command('add <name>').description('Add/update profile').option('--dry-run').option('--no-input').option('--no-verify', 'store credentials without checking them against Beget').option('--login <login>').action(async (name, cmdOpts, cmd) => {
   const globalOpts = cmd.parent.parent.opts();
   const cfgPath = getConfigPath(globalOpts.config);
   const cfg = await readConfig(cfgPath);
@@ -226,12 +230,23 @@ auth.command('add <name>').description('Add/update profile').option('--dry-run')
   const apiKey = process.env.BEGET_API_PASSWORD ?? process.env.BEGET_API_KEY ?? (!cmdOpts.noInput ? await promptMasked('Beget API password: ') : null);
   if (!login && !cmdOpts.noInput) login = await promptLine('Beget login: ');
   if (!login || !apiKey) throw new CliError('Missing login/api key', EXIT.USAGE_ERROR);
+  if (cmdOpts.dryRun) return printResult({ dryRun: true, action: 'auth.add', name, login, configPath: cfgPath }, { json: jsonModeFrom(globalOpts) });
+  if (cmdOpts.verify) {
+    const baseUrl = globalOpts.baseUrl ?? process.env.BEGET_API_BASE_URL ?? 'https://api.beget.com/api';
+    await callBeget({
+      baseUrl,
+      login,
+      apiKey,
+      section: 'user',
+      method: 'getAccountInfo',
+      timeoutMs: Number(globalOpts.timeout),
+    });
+  }
   const next = structuredClone(cfg);
   next.profiles[name] = { login, apiKey };
   if (!next.activeProfile) next.activeProfile = name;
-  if (cmdOpts.dryRun) return printResult({ dryRun: true, action: 'auth.add', name, login, configPath: cfgPath }, { json: jsonModeFrom(globalOpts) });
   await writeConfig(cfgPath, next);
-  printResult({ ok: true, profile: name, activeProfile: next.activeProfile }, { json: jsonModeFrom(globalOpts) });
+  printResult({ ok: true, profile: name, activeProfile: next.activeProfile, verified: Boolean(cmdOpts.verify) }, { json: jsonModeFrom(globalOpts) });
 });
 auth.command('list').description('List profiles').action(async (_, cmd) => {
   const globalOpts = cmd.parent.parent.opts();

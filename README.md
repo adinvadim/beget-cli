@@ -27,6 +27,11 @@ Non-interactive:
 BEGET_API_PASSWORD='***' beget auth add main --login mylogin --no-input
 ```
 
+`auth add` проверяет данные безопасным read-only вызовом `user/getAccountInfo`
+до записи профиля. Нужен именно пароль Beget API, а доступ к API должен быть
+разрешён в панели управления. Для подготовки профиля без сети можно явно
+пропустить проверку флагом `--no-verify`.
+
 ## Безопасность
 
 - Секреты не передавать через positional args.
