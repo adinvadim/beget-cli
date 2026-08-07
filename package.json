@@ -1,7 +1,7 @@
 {
   "name": "beget-cli",
   "version": "0.1.0",
-  "description": "Practical MVP CLI for Beget API",
+  "description": "CLI for Beget Hosting and Cloud VPS APIs",
   "type": "module",
   "bin": {
     "beget": "./bin/beget.js"

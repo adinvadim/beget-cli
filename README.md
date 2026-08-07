@@ -1,8 +1,10 @@
 # beget-cli
 
-CLI для Beget API (hosting) с полным покрытием методов из KB (RU+EN).
+CLI для Beget API с полным покрытием hosting API из KB (RU+EN) и всех
+69 операций Beget Cloud VPS API v1.8.1.
 
-Покрытие namespace: `account`, `domains`, `dns`, `ftp`, `mail`, `mysql`, `backup`, `cron`, `sites`, `stats`.
+Покрытие namespace: `account`, `domains`, `dns`, `ftp`, `mail`, `mysql`,
+`backup`, `cron`, `sites`, `stats`, `vps`.
 
 ## Установка
 
@@ -32,11 +34,40 @@ BEGET_API_PASSWORD='***' beget auth add main --login mylogin --no-input
 разрешён в панели управления. Для подготовки профиля без сети можно явно
 пропустить проверку флагом `--no-verify`.
 
+## Beget Cloud VPS
+
+Cloud API использует отдельный JWT. CLI получает его по паролю аккаунта и
+хранит только JWT в выбранном профиле:
+
+```bash
+beget auth cloud-login main --login mylogin
+beget auth use main
+beget vps regions --json
+beget vps configurations --json
+beget vps list --json
+beget vps get VPS_ID --json
+```
+
+Создание и сложные изменения принимают тело из актуальной OpenAPI-схемы:
+
+```bash
+beget vps create --body-file create-vps.json --dry-run --json
+beget vps create --body-file create-vps.json --json
+beget vps stop VPS_ID --dry-run --json
+beget vps remove VPS_ID --body-json '{"ip_action":"DELETE"}' --dry-run --json
+beget vps remove VPS_ID --body-json '{"ip_action":"DELETE"}' --yes --json
+```
+
+Полное дерево из 69 операций, JWT-поток и правила безопасных мутаций описаны
+в [docs/CLOUD_VPS.md](docs/CLOUD_VPS.md).
+
 ## Безопасность
 
 - Секреты не передавать через positional args.
 - Для mutate-команд есть `--dry-run`.
 - Для рискованных операций (delete/drop/restore) в non-interactive обязателен `--yes`.
+- Cloud-пароль не сохраняется; JWT никогда не печатается.
+- Cloud read-запросы могут повторяться при временном сбое, mutate-запросы отправляются ровно один раз.
 
 ## Полный method -> command map
 

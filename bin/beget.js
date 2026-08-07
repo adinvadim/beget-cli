@@ -7,8 +7,10 @@ import fssync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { URLSearchParams } from 'node:url';
+import { CloudApiClient, CloudApiError } from '../lib/cloud-api.js';
+import { registerVpsCommands } from '../lib/vps-commands.js';
 
-const EXIT = { OK: 0, GENERIC_ERROR: 1, USAGE_ERROR: 2, AUTH_ERROR: 3, API_ERROR: 4, CONFIG_ERROR: 5, NETWORK_ERROR: 6 };
+const EXIT = { OK: 0, GENERIC_ERROR: 1, USAGE_ERROR: 2, AUTH_ERROR: 3, API_ERROR: 4, CONFIG_ERROR: 5, NETWORK_ERROR: 6, OUTCOME_UNKNOWN: 7 };
 
 class CliError extends Error {
   constructor(message, code = EXIT.GENERIC_ERROR, details = undefined) {
@@ -83,6 +85,37 @@ function resolveCredentials(globalOpts, cfg) {
   return { login, apiKey, baseUrl, selectedProfile };
 }
 
+function resolveCloudCredentials(globalOpts, cfg) {
+  const selectedProfile = globalOpts.profile ?? process.env.BEGET_PROFILE ?? cfg.activeProfile;
+  const profile = selectedProfile ? cfg.profiles[selectedProfile] : null;
+  const token = process.env.BEGET_CLOUD_TOKEN ?? profile?.cloudToken;
+  const baseUrl = globalOpts.cloudBaseUrl ?? process.env.BEGET_CLOUD_API_BASE_URL ?? 'https://api.beget.com';
+  if (!token) {
+    throw new CliError('Missing Beget Cloud JWT. Use `beget auth cloud-login` or set BEGET_CLOUD_TOKEN.', EXIT.AUTH_ERROR);
+  }
+  return { token, baseUrl, selectedProfile };
+}
+
+function cloudError(error) {
+  if (!(error instanceof CloudApiError)) return error;
+  const code = {
+    auth: EXIT.AUTH_ERROR,
+    config: EXIT.CONFIG_ERROR,
+    network: EXIT.NETWORK_ERROR,
+    outcome_unknown: EXIT.OUTCOME_UNKNOWN,
+  }[error.kind] ?? EXIT.API_ERROR;
+  return new CliError(error.message, code, error.details ?? error.providerCode);
+}
+
+function redactSecrets(value) {
+  if (Array.isArray(value)) return value.map(redactSecrets);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    /password|token|secret/i.test(key) ? '[REDACTED]' : redactSecrets(item),
+  ]));
+}
+
 async function promptLine(query) {
   const rl = createInterface({ input, output });
   try {
@@ -145,8 +178,12 @@ async function getSecret({ cmdOpts, envKeys = [], prompt }) {
   for (const key of envKeys) {
     if (process.env[key]) return process.env[key];
   }
-  if (cmdOpts?.noInput) throw new CliError(`Missing secret in env (${envKeys.join(', ')}) for --no-input mode`, EXIT.USAGE_ERROR);
+  if (noInputFrom(cmdOpts)) throw new CliError(`Missing secret in env (${envKeys.join(', ')}) for --no-input mode`, EXIT.USAGE_ERROR);
   return promptMasked(prompt);
+}
+
+function noInputFrom(cmdOpts) {
+  return cmdOpts?.input === false || cmdOpts?.noInput === true;
 }
 
 async function callBeget({ baseUrl, login, apiKey, section, method, inputData, query = {}, timeoutMs = 20000 }) {
@@ -208,6 +245,43 @@ async function executeApi({ globalOpts, cmdOpts, section, method, inputData, que
   return callBeget({ ...creds, section, method, inputData, query, timeoutMs: Number(globalOpts.timeout) });
 }
 
+async function executeVpsOperation({ spec, cmd, options, path: requestPath, query, body }) {
+  const globalOpts = cmd.optsWithGlobals();
+  if (spec.mutate && options.dryRun) {
+    return printResult({
+      dryRun: true,
+      operationId: spec.operationId,
+      method: spec.method,
+      path: requestPath,
+      query,
+      body: redactSecrets(body ?? null),
+    }, { json: jsonModeFrom(globalOpts) });
+  }
+  if (spec.risky) {
+    await ensureRiskConfirmation({ cmdOpts: options, globalOpts, title: spec.description });
+  }
+
+  const cfg = await readConfig(getConfigPath(globalOpts.config));
+  const credentials = resolveCloudCredentials(globalOpts, cfg);
+  const client = new CloudApiClient({
+    baseUrl: credentials.baseUrl,
+    token: credentials.token,
+    timeoutMs: Number(globalOpts.timeout),
+  });
+  let result;
+  try {
+    result = await client.request({
+      method: spec.method,
+      path: requestPath,
+      query,
+      body,
+    });
+  } catch (error) {
+    throw cloudError(error);
+  }
+  printResult(result, { json: jsonModeFrom(globalOpts) });
+}
+
 const program = new Command();
 program
   .name('beget')
@@ -217,6 +291,7 @@ program
   .option('--profile <name>', 'profile to use')
   .option('--login <login>', 'override login for this invocation')
   .option('--base-url <url>', 'override API base URL')
+  .option('--cloud-base-url <url>', 'override Beget Cloud API base URL')
   .option('--timeout <ms>', 'request timeout in milliseconds', '20000')
   .option('--json', 'JSON output')
   .option('--yes', 'auto-confirm risky actions');
@@ -227,8 +302,8 @@ auth.command('add <name>').description('Add/update profile').option('--dry-run')
   const cfgPath = getConfigPath(globalOpts.config);
   const cfg = await readConfig(cfgPath);
   let login = cmdOpts.login ?? globalOpts.login;
-  const apiKey = process.env.BEGET_API_PASSWORD ?? process.env.BEGET_API_KEY ?? (!cmdOpts.noInput ? await promptMasked('Beget API password: ') : null);
-  if (!login && !cmdOpts.noInput) login = await promptLine('Beget login: ');
+  const apiKey = process.env.BEGET_API_PASSWORD ?? process.env.BEGET_API_KEY ?? (!noInputFrom(cmdOpts) ? await promptMasked('Beget API password: ') : null);
+  if (!login && !noInputFrom(cmdOpts)) login = await promptLine('Beget login: ');
   if (!login || !apiKey) throw new CliError('Missing login/api key', EXIT.USAGE_ERROR);
   if (cmdOpts.dryRun) return printResult({ dryRun: true, action: 'auth.add', name, login, configPath: cfgPath }, { json: jsonModeFrom(globalOpts) });
   if (cmdOpts.verify) {
@@ -243,7 +318,7 @@ auth.command('add <name>').description('Add/update profile').option('--dry-run')
     });
   }
   const next = structuredClone(cfg);
-  next.profiles[name] = { login, apiKey };
+  next.profiles[name] = { ...next.profiles[name], login, apiKey };
   if (!next.activeProfile) next.activeProfile = name;
   await writeConfig(cfgPath, next);
   printResult({ ok: true, profile: name, activeProfile: next.activeProfile, verified: Boolean(cmdOpts.verify) }, { json: jsonModeFrom(globalOpts) });
@@ -251,8 +326,8 @@ auth.command('add <name>').description('Add/update profile').option('--dry-run')
 auth.command('list').description('List profiles').action(async (_, cmd) => {
   const globalOpts = cmd.parent.parent.opts();
   const cfg = await readConfig(getConfigPath(globalOpts.config));
-  const rows = Object.entries(cfg.profiles).map(([name, p]) => ({ name, login: p.login, active: cfg.activeProfile === name }));
-  printResult(jsonModeFrom(globalOpts) ? { profiles: rows, activeProfile: cfg.activeProfile } : rows.map((r) => `${r.active ? '*' : ' '} ${r.name}\t${r.login}`).join('\n') || 'No profiles configured', { json: jsonModeFrom(globalOpts) });
+  const rows = Object.entries(cfg.profiles).map(([name, p]) => ({ name, login: p.login, cloud: Boolean(p.cloudToken), active: cfg.activeProfile === name }));
+  printResult(jsonModeFrom(globalOpts) ? { profiles: rows, activeProfile: cfg.activeProfile } : rows.map((r) => `${r.active ? '*' : ' '} ${r.name}\t${r.login ?? '-'}\tcloud:${r.cloud ? 'yes' : 'no'}`).join('\n') || 'No profiles configured', { json: jsonModeFrom(globalOpts) });
 });
 auth.command('use <name>').description('Set active profile').option('--dry-run').action(async (name, cmdOpts, cmd) => {
   const globalOpts = cmd.parent.parent.opts();
@@ -276,6 +351,158 @@ auth.command('remove <name>').description('Remove profile').option('--dry-run').
   await writeConfig(cfgPath, cfg);
   printResult({ ok: true, removed: name, activeProfile: nextActive }, { json: jsonModeFrom(globalOpts) });
 });
+
+auth.command('cloud-login <name>')
+  .description('Authenticate to Beget Cloud and store the returned JWT')
+  .option('--login <login>')
+  .option('--no-input')
+  .option('--dry-run')
+  .action(async (name, cmdOpts, cmd) => {
+    const globalOpts = cmd.parent.parent.opts();
+    const cfgPath = getConfigPath(globalOpts.config);
+    const cfg = await readConfig(cfgPath);
+    let login = cmdOpts.login ?? globalOpts.login ?? cfg.profiles[name]?.login;
+    if (!login && !noInputFrom(cmdOpts)) login = await promptLine('Beget login: ');
+    if (!login) throw new CliError('Missing Beget login', EXIT.USAGE_ERROR);
+    if (cmdOpts.dryRun) {
+      return printResult({ dryRun: true, action: 'auth.cloud-login', name, login }, { json: jsonModeFrom(globalOpts) });
+    }
+    const password = await getSecret({ cmdOpts, envKeys: ['BEGET_CLOUD_PASSWORD'], prompt: 'Beget account password: ' });
+
+    const client = new CloudApiClient({
+      baseUrl: globalOpts.cloudBaseUrl ?? process.env.BEGET_CLOUD_API_BASE_URL,
+      timeoutMs: Number(globalOpts.timeout),
+    });
+    let response;
+    try {
+      response = await client.request({
+        method: 'POST',
+        path: '/v1/auth',
+        authenticated: false,
+        body: { login, password, saveMe: true },
+      });
+    } catch (error) {
+      const needsCode = error instanceof CloudApiError && error.providerCode?.startsWith('CODE_REQUIRED');
+      if (!needsCode) throw cloudError(error);
+      const code = process.env.BEGET_CLOUD_AUTH_CODE
+        ?? (!noInputFrom(cmdOpts) ? await promptMasked('Authentication code: ') : null);
+      if (!code) throw new CliError(`Beget Cloud authentication requires a code (${error.providerCode}); set BEGET_CLOUD_AUTH_CODE in --no-input mode.`, EXIT.AUTH_ERROR);
+      try {
+        response = await client.request({
+          method: 'POST',
+          path: '/v1/auth',
+          authenticated: false,
+          body: { login, password, code, saveMe: true },
+        });
+      } catch (secondError) {
+        throw cloudError(secondError);
+      }
+    }
+    if (!response?.token) throw new CliError('Beget Cloud authentication returned no JWT', EXIT.API_ERROR);
+
+    const next = structuredClone(cfg);
+    next.profiles[name] = { ...next.profiles[name], login, cloudToken: response.token };
+    if (!next.activeProfile) next.activeProfile = name;
+    await writeConfig(cfgPath, next);
+    printResult({ ok: true, profile: name, activeProfile: next.activeProfile, cloudAuthenticated: true }, { json: jsonModeFrom(globalOpts) });
+  });
+
+auth.command('cloud-token <name>')
+  .description('Store an existing Beget Cloud JWT')
+  .option('--no-input')
+  .option('--no-verify', 'store the JWT without a read-only Cloud API check')
+  .option('--dry-run')
+  .action(async (name, cmdOpts, cmd) => {
+    const globalOpts = cmd.parent.parent.opts();
+    const cfgPath = getConfigPath(globalOpts.config);
+    const cfg = await readConfig(cfgPath);
+    if (cmdOpts.dryRun) {
+      return printResult({ dryRun: true, action: 'auth.cloud-token', name }, { json: jsonModeFrom(globalOpts) });
+    }
+    const token = await getSecret({ cmdOpts, envKeys: ['BEGET_CLOUD_TOKEN'], prompt: 'Beget Cloud JWT: ' });
+    if (cmdOpts.verify) {
+      const client = new CloudApiClient({
+        baseUrl: globalOpts.cloudBaseUrl ?? process.env.BEGET_CLOUD_API_BASE_URL,
+        token,
+        timeoutMs: Number(globalOpts.timeout),
+      });
+      try {
+        await client.request({ path: '/v1/vps/region' });
+      } catch (error) {
+        throw cloudError(error);
+      }
+    }
+    const next = structuredClone(cfg);
+    next.profiles[name] = { ...next.profiles[name], cloudToken: token };
+    if (!next.activeProfile) next.activeProfile = name;
+    await writeConfig(cfgPath, next);
+    printResult({ ok: true, profile: name, activeProfile: next.activeProfile, cloudAuthenticated: true, verified: Boolean(cmdOpts.verify) }, { json: jsonModeFrom(globalOpts) });
+  });
+
+auth.command('cloud-refresh [name]')
+  .description('Refresh the stored Beget Cloud JWT')
+  .option('--dry-run')
+  .action(async (name, cmdOpts, cmd) => {
+    const globalOpts = cmd.parent.parent.opts();
+    const cfgPath = getConfigPath(globalOpts.config);
+    const cfg = await readConfig(cfgPath);
+    const profileName = name ?? globalOpts.profile ?? process.env.BEGET_PROFILE ?? cfg.activeProfile;
+    const profile = profileName ? cfg.profiles[profileName] : null;
+    if (!profile?.cloudToken) throw new CliError('Selected profile has no Beget Cloud JWT', EXIT.AUTH_ERROR);
+    if (cmdOpts.dryRun) {
+      return printResult({ dryRun: true, action: 'auth.cloud-refresh', profile: profileName }, { json: jsonModeFrom(globalOpts) });
+    }
+    const client = new CloudApiClient({
+      baseUrl: globalOpts.cloudBaseUrl ?? process.env.BEGET_CLOUD_API_BASE_URL,
+      token: profile.cloudToken,
+      timeoutMs: Number(globalOpts.timeout),
+    });
+    let response;
+    try {
+      response = await client.request({ method: 'POST', path: '/v1/auth/refresh' });
+    } catch (error) {
+      throw cloudError(error);
+    }
+    if (!response?.token) throw new CliError('Beget Cloud refresh returned no JWT', EXIT.API_ERROR);
+    cfg.profiles[profileName].cloudToken = response.token;
+    await writeConfig(cfgPath, cfg);
+    printResult({ ok: true, profile: profileName, cloudAuthenticated: true, refreshed: true }, { json: jsonModeFrom(globalOpts) });
+  });
+
+auth.command('cloud-logout [name]')
+  .description('Revoke and remove the stored Beget Cloud JWT')
+  .option('--dry-run')
+  .option('--yes')
+  .action(async (name, cmdOpts, cmd) => {
+    const globalOpts = cmd.parent.parent.opts();
+    const cfgPath = getConfigPath(globalOpts.config);
+    const cfg = await readConfig(cfgPath);
+    const profileName = name ?? globalOpts.profile ?? process.env.BEGET_PROFILE ?? cfg.activeProfile;
+    const profile = profileName ? cfg.profiles[profileName] : null;
+    if (!profile?.cloudToken) throw new CliError('Selected profile has no Beget Cloud JWT', EXIT.AUTH_ERROR);
+    if (cmdOpts.dryRun) {
+      return printResult({ dryRun: true, action: 'auth.cloud-logout', profile: profileName }, { json: jsonModeFrom(globalOpts) });
+    }
+    await ensureRiskConfirmation({ cmdOpts, globalOpts, title: `Revoke Beget Cloud JWT for profile '${profileName}'` });
+    const client = new CloudApiClient({
+      baseUrl: globalOpts.cloudBaseUrl ?? process.env.BEGET_CLOUD_API_BASE_URL,
+      token: profile.cloudToken,
+      timeoutMs: Number(globalOpts.timeout),
+    });
+    let alreadyRevoked = false;
+    try {
+      await client.request({ method: 'POST', path: '/v1/auth/logout' });
+    } catch (error) {
+      if (error instanceof CloudApiError && error.kind === 'auth') {
+        alreadyRevoked = true;
+      } else {
+        throw cloudError(error);
+      }
+    }
+    delete cfg.profiles[profileName].cloudToken;
+    await writeConfig(cfgPath, cfg);
+    printResult({ ok: true, profile: profileName, cloudAuthenticated: false, alreadyRevoked }, { json: jsonModeFrom(globalOpts) });
+  });
 
 const account = program.command('account').description('Account operations');
 account.command('info').description('user/getAccountInfo').action(async (_, cmd) => {
@@ -453,6 +680,11 @@ stats.command('sites-list-load').description('stat/getSitesListLoad').action(asy
 stats.command('site-load').description('stat/getSiteLoad').requiredOption('--site-name <name>').action(async (cmdOpts, cmd) => { const globalOpts = cmd.parent.parent.opts(); printResult(await executeApi({ globalOpts, cmdOpts, section: 'stat', method: 'getSiteLoad', inputData: { site_name: cmdOpts.siteName } }), { json: jsonModeFrom(globalOpts) }); });
 stats.command('db-list-load').description('stat/getDbListLoad').action(async (_, cmd) => { const globalOpts = cmd.parent.parent.opts(); printResult(await executeApi({ globalOpts, cmdOpts: {}, section: 'stat', method: 'getDbListLoad' }), { json: jsonModeFrom(globalOpts) }); });
 stats.command('db-load').description('stat/getDbLoad').requiredOption('--db-name <name>').action(async (cmdOpts, cmd) => { const globalOpts = cmd.parent.parent.opts(); printResult(await executeApi({ globalOpts, cmdOpts, section: 'stat', method: 'getDbLoad', inputData: { db_name: cmdOpts.dbName } }), { json: jsonModeFrom(globalOpts) }); });
+
+registerVpsCommands(program, {
+  execute: executeVpsOperation,
+  usageError: (message) => new CliError(message, EXIT.USAGE_ERROR),
+});
 
 program.configureOutput({ outputError: (str, write) => write(str) });
 

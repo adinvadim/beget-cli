@@ -4,8 +4,9 @@
 `beget`
 
 ## Scope
-Полное покрытие методов Beget API (hosting KB, RU+EN):
-`user`, `domain`, `dns`, `ftp`, `mail`, `mysql`, `backup`, `cron`, `site`, `stat`.
+Полное покрытие методов Beget API (hosting KB, RU+EN) и Beget Cloud VPS
+OpenAPI v1.8.1: `user`, `domain`, `dns`, `ftp`, `mail`, `mysql`, `backup`,
+`cron`, `site`, `stat`, `vps`.
 
 Источники каталога методов:
 - `https://beget.com/ru/kb/api/funkczii-upravleniya-akkauntom`
@@ -25,6 +26,7 @@
 - `--profile <name>`
 - `--login <login>`
 - `--base-url <url>`
+- `--cloud-base-url <url>`
 - `--timeout <ms>`
 - `--json`
 - `--yes`
@@ -34,6 +36,16 @@
 - Risky mutate (delete/drop/restore) требуют подтверждение:
   - interactive: prompt `y/N`
   - non-interactive: обязателен `--yes`
+- Cloud mutate отправляется ровно один раз; неоднозначный transport failure
+  завершается кодом 7 и не повторяется автоматически.
+- Cloud body с секретами передаётся через `--body-file -`/файл, не через argv.
+
+## Cloud VPS
+
+Полный map всех 69 операций Beget Cloud VPS v1.8.1 находится в
+[`CLOUD_VPS.md`](CLOUD_VPS.md). Команды используют JWT из выбранного профиля
+или `BEGET_CLOUD_TOKEN`; получить, обновить и отозвать его можно через
+`auth cloud-login`, `auth cloud-refresh` и `auth cloud-logout`.
 
 ## Full method → command map
 
@@ -130,3 +142,4 @@
 - `4` API-level
 - `5` config
 - `6` network/timeout/http
+- `7` outcome unknown после неоднозначного Cloud mutate

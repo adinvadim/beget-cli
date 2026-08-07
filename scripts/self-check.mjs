@@ -59,6 +59,13 @@ try {
   r = run(['stats', '--help']);
   assert(r.status === 0, 'stats help should succeed');
 
+  r = run(['vps', '--help']);
+  assert(r.status === 0, 'vps help should succeed');
+
+  r = run(['vps', 'create', '--body-json', '{"display_name":"demo","password":"secret"}', '--dry-run', '--json']);
+  assert(r.status === 0, 'vps create dry-run should succeed without a Cloud JWT');
+  assert(!r.stdout.includes('secret'), 'vps dry-run must redact passwords');
+
   r = run(['account', 'info']);
   assert(r.status !== 0, 'account info without valid creds/network should fail in smoke');
 
